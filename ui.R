@@ -2,7 +2,7 @@
 ## Title: SPC_ShinyApp
 ## Author: Sydney Paul
 ## Date Created: 6/5/2019 
-## Date Modified: 6/26/2019
+## Date Modified: 7/24/2019
 ## 
 ## Description: ui.R file
 ## Allows users to upload a csv or excel file. 
@@ -24,6 +24,7 @@ library(ggseas) # for on-the-fly seasonal adjustment plotting
 library(ggExtra) # for making line+histogram marginal plots
 library(gridExtra) # for creating multi-graph plots
 library(shiny)
+library(plotly)
 library(shinythemes)
 
 
@@ -42,8 +43,13 @@ navbarPage(
     value = "tab1",
     sidebarLayout(
       sidebarPanel(
-        h2('Select a file:'),
-        fileInput("file1", "Choose a File", multiple = FALSE,
+        h2('Select a file or files:'),
+        
+        h5('Selecting multiple files will create one large table of stacked files.'),
+        h5('Please ensure that all column names and file types are the same.'),
+        br(),
+        
+        fileInput("file1", "Choose a File", multiple = TRUE,
           accept = c("text/csv", "text/comma-separated-values, text/plain", ".csv", ".xlsx", ".xls")
         ),
         
@@ -52,6 +58,7 @@ navbarPage(
         radioButtons("header", "Header", choices = c(Yes = TRUE, No = FALSE), selected = TRUE),
         radioButtons("sep", "Separator", choices = c(Comma = ",", Semicolon = ";", Tab = "\t"), selected = ","),
         radioButtons("quote", "Quote", choices = c(None = "", "Double Quote" = '"', "Single Quote" = "'"), selected = '"')
+      
       ),
       
       mainPanel(
@@ -304,6 +311,7 @@ navbarPage(
         
         checkboxInput('should_break', label = 'Do you want to break the x-axis?', value = FALSE),
         uiOutput('breakDataControl'),
+        uiOutput('breakDateCalendar'),
         
         checkboxInput('already_grouped', "Data has already been grouped", value = TRUE),
         uiOutput("groupedControls")
@@ -311,13 +319,13 @@ navbarPage(
       
       column(width = 10,
       fluidRow(
-        plotOutput("control_plot", height = '800px'),
+        plotlyOutput("control_plot", height = '800px'),
         verbatimTextOutput('not_available')
       ))),
       
       fluidRow(
                actionButton("return_to_start", "Startover with a new file"),
-               downloadButton("save_plot", "Save your plot as .png"), 
+               # downloadButton("save_plot", "Save your plot as .png"), # TODO: with plotly don't need this anymore??
                actionButton("quit_app", "Quit")
         
       )
