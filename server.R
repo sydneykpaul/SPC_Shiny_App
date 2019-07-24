@@ -2,7 +2,7 @@
 ## Title: SPC_ShinyApp
 ## Author: Sydney Paul
 ## Date Created: 6/5/2019 
-## Date Modified: 6/26/2019
+## Date Modified: 7/24/2019
 ## 
 ## Description: server.R file
 ## Allows users to upload a csv or excel file. 
@@ -15,7 +15,6 @@
 
 
 # Load necessary libraries
-library(tidyverse)
 library(ggplot2) # for general plotting
 library(lubridate) # for easier date/time casting
 library(forecast) # for plotting and forecasts
@@ -25,6 +24,8 @@ library(ggseas) # for on-the-fly seasonal adjustment plotting
 library(ggExtra) # for making line+histogram marginal plots
 library(gridExtra) # for creating multi-graph plots
 library(shiny)
+library(plotly)
+library(tidyverse)
 
 
 plotSPC <- function(subgroup, point, mean, sigma, k = 3,
@@ -91,20 +92,31 @@ plotSPC <- function(subgroup, point, mean, sigma, k = 3,
     df$warn[orange] = "orange"
   }
   df$warn[point > df$ucl | point < df$lcl] = "red"
-  p +
+  
+  
+  p_final <- p +
     geom_line(aes(y = point), col = "royalblue3") +
     geom_point(data = df, aes(x = subgroup, y = point, col = warn)) +
     scale_color_manual(values = c("blue" = "royalblue3", "orange" = "orangered", "red" = "red3"), guide = FALSE) +
     labs(x = label.x, y = label.y) +
     theme_bw()
+  
+  ggplotly(p_final)
+}
+
+layout_ggplotly <- function(gg, x = -0.1, y = -0.03){
+  # The 1 and 2 goes into the list that contains the options for the x and y axis labels respectively
+  gg[['x']][['layout']][['annotations']][[1]][['y']] <- x
+  gg[['x']][['layout']][['annotations']][[2]][['x']] <- y
+  gg
 }
 
 function(input, output, session) {
   # Hide all tabs from user at beginning
-  hideTab("tabs", "tab2")
-  hideTab("tabs", "tab3")
-  hideTab("tabs", "tab4") #TODO: uncomment after testing
-  hideTab("tabs", "tab5")
+  # hideTab("tabs", "tab2")
+  # hideTab("tabs", "tab3")
+  # hideTab("tabs", "tab4") #TODO: uncomment after testing
+  # hideTab("tabs", "tab5")
 
   
   # Tab 1 -----------------------------------------------------------------------------------------
@@ -112,26 +124,51 @@ function(input, output, session) {
   
   fileData <- reactive({
     req(input$file1)
+    df <- NULL
     message <- c("File could not be uploaded. Check that it is the correct file type.")
     tryCatch({
-      if (input$file_type == 'csv') {
-        df <- read_delim(
-          file = input$file1$datapath,
-          col_names = as.logical(input$header),
-          delim = input$sep,
-          quote = input$quote,
-          progress = TRUE)
-
-      } else if (input$file_type == 'excel') {
-        df <- readxl::read_excel(
-          path = input$file1$datapath,
-          sheet = 1,
-          col_names =  as.logical(input$header))
+      if (nrow(input$file1) == 1) {
+        if (input$file_type == 'csv') {
+          df <- read_delim(
+            file = input$file1$datapath,
+            col_names = as.logical(input$header),
+            delim = input$sep,
+            quote = input$quote,
+            progress = TRUE)
+  
+        } else if (input$file_type == 'excel') {
+          df <- readxl::read_excel(
+            path = input$file1$datapath,
+            sheet = 1,
+            col_names =  as.logical(input$header))
+        }
+        message <- c("File successfully uploaded.")
+        
+      } else {
+        for (file in input$file1) {
+          if (input$file_type == 'csv') {
+            df <- data.table::rbindlist(lapply(input$file1$datapath, 
+                                     data.table::fread, 
+                                     header = as.logical(input$header), 
+                                     sep = input$sep, 
+                                     quote = input$quote),
+                                  use.names = TRUE, fill = TRUE)
+            
+          } else if (input$file_type == 'excel') {
+            df <- data.table::rbindlist(lapply(input$file1$datapath,
+                                               readxl::read_excel,
+                                               sheet = 1,
+                                               col_names = as.logical(input$header)),
+                                  use.names = TRUE, fill = TRUE)
+          }
+        }
+        df <- as_tibble(df)
+        message <- c("Files successfully uploaded and stacked.")
       }
-      message <- c("File successfully uploaded.")
       
     }, error = function(e){
       # Displays error has occured to the user, but doesn't stop executing
+      print(e)
     })
     output$upload_feedback <- renderText(message)
     df
@@ -169,6 +206,7 @@ function(input, output, session) {
                                "There are few, if any, bars that cross the blue lines in the ACF plot" = TRUE,
                                "There are no sharp peaks in the spectrum plot" = TRUE
                              ))
+    updateSelectInput(session, 'which_facet', "Which facet to plot:", choices = 'Not Applicable')
     
     updateSelectInput(session = session, "choose_control_plot", label = "Choose your SPC plot",
                       choices = list(
@@ -195,7 +233,7 @@ function(input, output, session) {
   
 
   observeEvent(input$tab1to2, {
-    req(input$file1)
+    req(!is.null(input$file1) & !is.null(fileData()))
     showTab('tabs', 'tab2')
     updateNavbarPage(session, inputId = 'tabs', selected = 'tab2')
     hideTab("tabs", "tab1") # TODO: hide first tab or not...?
@@ -217,7 +255,7 @@ function(input, output, session) {
   observeEvent(input$x_col, {
     df <- fileData()
     if (input$x_col != 'SELECT') {
-      choices_df <- df %>% select(-c(input$x_col))
+      choices_df <- df %>% dplyr::select(-c(input$x_col))
       updateSelectInput(session, 'y_col', choices = c('SELECT', names(choices_df)))
     }
   })
@@ -225,7 +263,7 @@ function(input, output, session) {
   observeEvent(input$y_col,  {
     df <- fileData()
     if (input$y_col != 'SELECT') {
-      choices_df <- df %>% select(-c(input$x_col, input$y_col))
+      choices_df <- df %>% dplyr::select(-c(input$x_col, input$y_col))
       updateSelectInput(session, 'n_col', choices = c('SELECT', names(choices_df), 'NONE'))
     } 
   })
@@ -234,13 +272,13 @@ function(input, output, session) {
     df <- fileData()
     if (input$n_col != 'SELECT') {
       if (input$n_col == 'NONE') {
-        choices_df <- df %>% select(-c(input$x_col, input$y_col)) 
+        choices_df <- df %>% dplyr::select(-c(input$x_col, input$y_col)) 
         updateSelectInput(session, 'f_col', choices = c('SELECT', names(choices_df), 'NONE')) 
         
       } else {
       # f_col lines aren't necessary right now as we display all columns as options in renderUI for f_col
       # if want to restrict to unused columns, will have to start here
-      choices_df <- df %>% select(-c(input$x_col, input$y_col, input$n_col))
+      choices_df <- df %>% dplyr::select(-c(input$x_col, input$y_col, input$n_col))
       updateSelectInput(session, 'f_col', choices = c('SELECT', names(choices_df), 'NONE'))
       }
     }
@@ -347,7 +385,7 @@ function(input, output, session) {
         
         mk_test <- trend::mk.test(d$y)
 
-        if (mk_test$p.value < 0.05) {
+        if (mk_test$p.value > 0.05) {
           has_trend_flag <- FALSE
           m <- paste0(unique(d$f), "<span class='pass'>: Passes the MK trend test at 5%!</span><br/>")
           message <- c(message, m)
@@ -364,7 +402,7 @@ function(input, output, session) {
       
       mk_test <- trend::mk.test(df$y)
       
-      if (mk_test$p.value < 0.05) {
+      if (mk_test$p.value > 0.05) {
         has_trend_flag <- FALSE
         return("<span class='pass'>Passes the MK trend test at 5%!</span><br/>")
         
@@ -394,8 +432,6 @@ function(input, output, session) {
       showTab('tabs', 'tab4')
       updateNavbarPage(session, inputId = 'tabs', selected = 'tab4')
     }
-
-    
   })
 
  
@@ -414,7 +450,7 @@ function(input, output, session) {
                                   xlab = input$pregrouped_on, 
                                   title = 'Run Chart',
                                   facets = ~f,
-                                  x.angle = 90)      
+                                  x.angle = 45)      
     } else {
       run_chart <- qicharts2::qic(x = x, y = y, n = n, data = df, 
                                   multiply = as.numeric(input$multiple),
@@ -491,6 +527,13 @@ function(input, output, session) {
     }
   })
   
+  output$breakDateCalendar <- renderUI({
+    req(input$break_col)
+    if (input$should_break & input$break_col == "Choose date on calendar") {
+      dateInput("break_date", label = 'Choose date to break on:')
+    }
+  })
+  
   output$aggFunControl <- renderUI({
     if (input$choose_control_plot == 'run' || input$choose_control_plot == 'imr')
     {
@@ -498,15 +541,18 @@ function(input, output, session) {
                   choices = list('mean' = 'mean', 'median' = 'median', 'sum' = 'sum', 'sd' = 'sd'),
                   selected = 'mean') #TODO: This only does things if n_col isn't null?
     }
+    else {
+      
+    }
   })
   
   output$groupedControls <- renderUI({
     if (input$already_grouped)
     {
       selectInput("pregrouped_on", label = "The data is already subgrouped by:",
-                  choices = list('Days' = 'Days', 'Weeks' = 'Weeks', 'Months' = 'Months', 'Quarters' = 'Quarters', 'Years' = 'Years',
-                                 'Sequential Patients' = 'Sequential Patients', 'Sequential Procedures' = 'Sequential Procedures', 'Other' = 'Subgroups'),
+                  choices = list('Days' = 'Days', 'Weeks' = 'Weeks', 'Months' = 'Months', 'Quarters' = 'Quarters', 'Years' = 'Years'),
                   selected = "Months")
+      # old choice list if needed later: list('Days' = 'Days', 'Weeks' = 'Weeks', 'Months' = 'Months', 'Quarters' = 'Quarters', 'Years' = 'Years', 'Sequential Patients' = 'Sequential Patients', 'Sequential Procedures' = 'Sequential Procedures', 'Other' = 'Subgroups')
     }
     else
     {
@@ -594,27 +640,55 @@ function(input, output, session) {
                           k = 5, band.show = FALSE, rule.show = FALSE,
                           label.y = paste0("Value per ", input$multiple, " patient days cumulative sum"), 
                           label.x = switch(input$already_grouped + 1, input$subgroup_on, input$pregrouped_on))
-    lower.plot + geom_line(aes(y = point.cusumh), col = "royalblue3") +
+    p_final <- lower.plot + geom_line(aes(y = point.cusumh), col = "royalblue3") +
       geom_point(aes(y = point.cusumh), col = "royalblue3")
+    
+    ggplotly(p_final)
   })
   
   # TODO: EWMA and CUSUM faceted? Subgrouped? Breaks? 
 
   get_breaks <- reactive({
+    req(input$break_col)
     df <- fileData()
-    cutoffDates <- (df %>% group_by_at(input$break_col) %>% summarise_at(input$x_col, max) %>% arrange_at(input$x_col))[[input$x_col]]
     
-    if (input$already_grouped) {
-      dataDates <- arrange_at(df, input$x_col)[[input$x_col]]
+    # break on user input date
+    if (input$break_col == "Choose date on calendar") {
+      if (!is.null(input$break_date)) {
+        if (input$already_grouped) {
+          dataDates <- as.Date(arrange_at(df, input$x_col)[[input$x_col]])
+          breaks <- which.min(abs(dataDates - as.Date(input$break_date)))
+  
+        } else if (is.null(input$subgroup_on)) {
+          return(NULL)
+        } else {
+          only_dates <- as_datetime(arrange_at(df, input$x_col)[[input$x_col]])
+          changed_dates <- cut.POSIXt(only_dates, input$subgroup_on) %>% unique()
 
-    }  else if (is.null(input$subgroup_on)) {
-      return(NULL)
+          breaks <- which.min(abs(as.Date(changed_dates) - as.Date(input$break_date)))
+        }
+      } else {
+        return(NULL) # user hasn't picked date yet
+      }
       
+    # break on column
     } else {
-      cutoffDates <- cut.POSIXt(cutoffDates, input$subgroup_on)
-      dataDates <- (df %>% mutate_at(input$x_col, cut.POSIXt, input$subgroup_on) %>% group_by_at(input$x_col) %>% summarise_at(input$break_col, length) %>% arrange_at(input$x_col))[[input$x_col]]
+      cutoffDates <- (df %>% group_by_at(input$break_col) %>% summarise_at(input$x_col, max) %>% arrange_at(input$x_col))[[input$x_col]]
+  
+      if (input$already_grouped) {
+        dataDates <- arrange_at(df, input$x_col)[[input$x_col]]
+  
+      } else if (is.null(input$subgroup_on)) {
+          return(NULL)
+        
+      } else {
+        cutoffDates <- cut.POSIXt(as_datetime(cutoffDates), input$subgroup_on)
+        dataDates <- (df %>% mutate_at(input$x_col, cut.POSIXt, input$subgroup_on) %>% group_by_at(input$x_col) %>% summarise_at(input$break_col, length) %>% arrange_at(input$x_col))[[input$x_col]]
+      }
+  
+      breaks <- which(dataDates %in% cutoffDates)
     }
-    breaks <- which(dataDates %in% cutoffDates)
+    
     return(breaks) 
   })
   
@@ -628,17 +702,17 @@ function(input, output, session) {
       df <- fileData()
       colNames <- names(df)
       colNames <- colNames[colNames != input$x_col] # TODO: Also remove the y_col? n and f columns?
-      updateSelectInput(session, 'break_col', choices = colNames)
+      updateSelectInput(session, 'break_col', choices = c(colNames, "Choose date on calendar"))
     }
   })
   
   chartChange <- reactive({
-    list(input$should_break, input$choose_control_plot, input$break_col, input$already_grouped, input$subgroup_on, input$agg_fun)
+    list(input$should_break, input$choose_control_plot, input$break_col, input$already_grouped, input$subgroup_on, input$agg_fun, input$break_date)
   })
   
   observeEvent(chartChange(), {
     if (input$choose_control_plot == "none") {
-      output$control_plot <- renderPlot({})
+      output$control_plot <- renderPlotly({})
       return();
     }
 
@@ -650,16 +724,20 @@ function(input, output, session) {
     parts = switch(input$should_break + 1, NULL, get_breaks())
     facet = switch(input$facet + 1, NULL, ~f)
     aggfun = switch((input$choose_control_plot == 'run' || input$choose_control_plot == 'imr') + 1, NULL, input$agg_fun)
-  
+    
       
     if (input$choose_control_plot == "EWMA") {
-        output$control_plot <- renderPlot(show(get_EWMA_chart()))
+        output$control_plot <- renderPlotly(get_EWMA_chart())
         
     } else if (input$choose_control_plot == 'CUSUM') {
-        output$control_plot <- renderPlot(show(get_CUSUM_chart()))
+        output$control_plot <- renderPlotly(get_CUSUM_chart())
       
     } else if (input$choose_control_plot == 'np') {
-        plot(0, 0, main = "p-charts are prefered")
+        output$control_plot <- renderPlotly({
+          ggplotly(ggplot(tibble(x = 1, y = 1), aes(x, y)) + 
+            geom_point() + 
+            labs(title = "p-charts are prefered", x = '', y = ''))
+        })
       
     } else if (input$choose_control_plot == 'imr' || input$choose_control_plot == 'xbars') {
       if (input$choose_control_plot == 'imr') {
@@ -677,7 +755,8 @@ function(input, output, session) {
         chart2 = 's'
       }
       
-      p1 <- qicharts2::qic(x = x, y = y, n = n, data = df, multiply = as.numeric(input$multiple),
+      p1 <- ggplotly(
+               qicharts2::qic(x = x, y = y, n = n, data = df, multiply = as.numeric(input$multiple),
                      ylab = paste0("Value per", " ", input$multiple, " patient days"), xlab = xlabel,
                      title = title1,
                      chart = chart1,
@@ -686,23 +765,31 @@ function(input, output, session) {
                      facets = facet,
                      agg.fun = aggfun,
                      show.labels = TRUE)
+      )
       
-      p2 <- qicharts2::qic(x = x, y = y, n = n, data = df, multiply = as.numeric(input$multiple),
+      p2 <- ggplotly(
+                qicharts2::qic(x = x, y = y, n = n, data = df, multiply = as.numeric(input$multiple),
                      ylab = paste0("Value per", " ", input$multiple, " patient days"), xlab = xlabel,
-                     title = title2,
+                     title = paste0(title1, " (top), ", title2, " (bottom)"),
                      chart = chart2,
                      x.period = xperiod,
                      part = parts,
                      facets = facet,
                      show.labels = TRUE)
+      )
       
-      output$control_plot <- renderPlot({
-        grid.arrange(p1, p2, nrow = 2)
+      output$control_plot <- renderPlotly({
+        plotly::subplot(p1, p2, nrows = 2, titleX = T, titleY = T, widths = c(1,0)) %>% 
+          plotly::layout(yaxis = list(domain = c(0, 0.35), axis.automargin = T), yaxis2 = list(domain = c(0.65, 1), axis.automargin = T),
+                 xaxis = list(domain = c(0, 1), axis.automargin = T), xaxis2 = list(domain = c(0, 1), axis.automargin = T),
+                 margin=list(l = 100))
+
       })
       
     } else {
-        output$control_plot <- renderPlot({
-          qicharts2::qic(x = x, y = y, n = n, data = df, multiply = as.numeric(input$multiple),
+        output$control_plot <- renderPlotly({
+          p <- ggplotly(
+            qicharts2::qic(x = x, y = y, n = n, data = df, multiply = as.numeric(input$multiple),
                          ylab = paste0("Value per", " ", input$multiple, " patient days"), xlab = xlabel,
                          title = paste0(input$choose_control_plot, " ", "chart"),
                          chart = input$choose_control_plot,
@@ -710,9 +797,14 @@ function(input, output, session) {
                          part = parts,
                          facets = facet,
                          agg.fun = aggfun,
-                         x.angle = 90,
+                         x.angle = 45,
                          show.labels = TRUE)
-        })
+          ) %>% layout(margin=list(l = 100))
+          if (input$facet) {
+            p <- p %>% layout_ggplotly()
+          }
+          p
+      })
     }
   })
   
@@ -721,19 +813,19 @@ function(input, output, session) {
     showTab("tabs", "tab1")
     updateNavbarPage(session, inputId = 'tabs', selected = 'tab1')
 
-    hideTab("tabs", "tab2")
-    hideTab("tabs", "tab3") # TODO: uncomment after testing
-    hideTab("tabs", "tab4")
-    hideTab("tabs", "tab5")
+    # hideTab("tabs", "tab2")
+    # hideTab("tabs", "tab3") # TODO: uncomment after testing
+    # hideTab("tabs", "tab4")
+    # hideTab("tabs", "tab5")
 
   })
   
-    output$save_plot <- downloadHandler(
-      filename = function() { paste0(input$choose_control_plot, "_", "chart.png") },
-      content = function(file) {
-        ggsave(file, device = "png", width = 20, height = 12, units = 'in')
-      }
-    )
+    # output$save_plot <- downloadHandler( # TODO: with plotly don't need this anymore??
+    #   filename = function() { paste0(input$choose_control_plot, "_", "chart.png") },
+    #   content = function(file) {
+    #     ggsave(file, device = "png", width = 20, height = 12, units = 'in')
+    #   }
+    # )
   
   observeEvent(input$quit_app, {
     stopApp()
