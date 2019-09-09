@@ -2,7 +2,7 @@
 ## Title: SPC_ShinyApp
 ## Author: Sydney Paul
 ## Date Created: 6/5/2019 
-## Date Modified: 7/24/2019
+## Date Modified: 9/9/2019
 ## 
 ## Description: ui.R file
 ## Allows users to upload a csv or excel file. 
@@ -170,8 +170,10 @@ navbarPage(
           tags$ul(
             tags$li("For either run charts or control charts, the data points must be independent for the guidelines to be effective.
                     The first test of that is conceptual—do you expect that one value in this series will influence a subsequent
-                    value?")
-            )
+                    value?"),
+            tags$li("In the ACF plot, look for repetitive patterns and/or peaks that extend beyond the blue lines, which suggest that autocorrelation is present."),
+            tags$li("In the Spectrum plot, look for repetitive patterns and/or peaks, which suggest cyclical or seasonal effects (at a period of 1 / frequency).")
+          )
         ),
         
         br(),
@@ -297,8 +299,10 @@ navbarPage(
             "I chart & MR chart" = 'imr',
             "x̄ chart & s chart" = "xbars",
             "p chart" = "p",
+            "p' chart" = "pp",
             "np chart" = "np",
-            "u chart" = "u", 
+            "u chart" = "u",
+            "u' chart" = "up",
             "c chart" = "c",
             "g chart" = "g",
             "t chart" = "t"
