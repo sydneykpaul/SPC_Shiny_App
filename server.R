@@ -2,7 +2,7 @@
 ## Title: SPC_ShinyApp
 ## Author: Sydney Paul
 ## Date Created: 6/5/2019 
-## Date Modified: 7/24/2019
+## Date Modified: 9/9/2019
 ## 
 ## Description: server.R file
 ## Allows users to upload a csv or excel file. 
@@ -24,7 +24,9 @@ library(ggseas) # for on-the-fly seasonal adjustment plotting
 library(ggExtra) # for making line+histogram marginal plots
 library(gridExtra) # for creating multi-graph plots
 library(shiny)
+library(shinythemes)
 library(plotly)
+library(trend)
 library(tidyverse)
 
 
@@ -113,10 +115,10 @@ layout_ggplotly <- function(gg, x = -0.1, y = -0.03){
 
 function(input, output, session) {
   # Hide all tabs from user at beginning
-  # hideTab("tabs", "tab2")
-  # hideTab("tabs", "tab3")
-  # hideTab("tabs", "tab4") #TODO: uncomment after testing
-  # hideTab("tabs", "tab5")
+  hideTab("tabs", "tab2")
+  hideTab("tabs", "tab3")
+  hideTab("tabs", "tab4") #TODO: uncomment after testing
+  hideTab("tabs", "tab5")
 
   
   # Tab 1 -----------------------------------------------------------------------------------------
@@ -217,8 +219,10 @@ function(input, output, session) {
                         "I chart & MR chart" = 'imr',
                         "x̄ chart & s chart" = "xbars",
                         "p chart" = "p",
+                        "p' chart" = "pp",
                         "np chart" = "np",
-                        "u chart" = "u", 
+                        "u chart" = "u",
+                        "u' chart" = "up",
                         "c chart" = "c",
                         "g chart" = "g",
                         "t chart" = "t"
@@ -758,7 +762,7 @@ function(input, output, session) {
       p1 <- ggplotly(
                qicharts2::qic(x = x, y = y, n = n, data = df, multiply = as.numeric(input$multiple),
                      ylab = paste0("Value per", " ", input$multiple, " patient days"), xlab = xlabel,
-                     title = title1,
+                     title = paste0(title1, " (top), ", title2, " (bottom)"),
                      chart = chart1,
                      x.period = xperiod,
                      part = parts,
@@ -779,7 +783,7 @@ function(input, output, session) {
       )
       
       output$control_plot <- renderPlotly({
-        plotly::subplot(p1, p2, nrows = 2, titleX = T, titleY = T, widths = c(1,0)) %>% 
+        plotly::subplot(p2, p1, nrows = 2, titleX = T, titleY = T, widths = c(1,0)) %>% 
           plotly::layout(yaxis = list(domain = c(0, 0.35), axis.automargin = T), yaxis2 = list(domain = c(0.65, 1), axis.automargin = T),
                  xaxis = list(domain = c(0, 1), axis.automargin = T), xaxis2 = list(domain = c(0, 1), axis.automargin = T),
                  margin=list(l = 100))
